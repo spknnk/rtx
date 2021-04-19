@@ -58,9 +58,9 @@ void handle_signals() {
 enum class ParallelizationPolicy { CUDA, OpenMP };
 
 struct Flags {
-    ParallelizationPolicy parallelization_policy;
+    ParallelizationPolicy parallelizationMethod;
 
-    Flags() : parallelization_policy(ParallelizationPolicy::CUDA){};
+    Flags() : parallelizationMethod(ParallelizationPolicy::CUDA){};
 };
 
 static Flags flags;
@@ -70,11 +70,11 @@ void parse_flags(int argc, char *argv[]) {
     if (argc < 2) return;
     if (argc == 2) {
         if (strcmp(argv[1], "--gpu") == 0) {
-            flags.parallelization_policy = ParallelizationPolicy::CUDA;
+            flags.parallelizationMethod = ParallelizationPolicy::CUDA;
         }
         
         if (strcmp(argv[1], "--cpu") == 0) {
-            flags.parallelization_policy = ParallelizationPolicy::OpenMP;
+            flags.parallelizationMethod = ParallelizationPolicy::OpenMP;
         }
         
         else if ((strcmp(argv[1], "--cpu") != 0) and (strcmp(argv[1], "--gpu") != 0)) {
@@ -125,28 +125,24 @@ struct CameraMovement {
 };
 
 struct FigureParams {
-    Vector3d center;
-    Vector3d color;
-    double radius;
-    double kreflection, krefraction;
-    int nlights;
+    Vector3d center, color;
+    double radius, k_refl, k_refr;
+    int lights_num;
 
     friend std::istream &operator>>(std::istream &is, FigureParams &p) {
-        is >> p.center >> p.color >> p.radius >> p.kreflection >>
-            p.krefraction >> p.nlights;
+        is >> p.center >> p.color >> p.radius >> p.k_refl >> p.k_refr >> p.lights_num;
         return is;
     }
 };
 
 struct FloorParams {
-    Vector3d a, b, c, d;
+    Vector3d a, b, c, d, color;
+    double k_refl;
     std::string texture_path;
-    Vector3d color;
-    double kreflection;
 
     friend std::istream &operator>>(std::istream &is, FloorParams &p) {
         is >> p.a >> p.b >> p.c >> p.d >> p.texture_path >> p.color >>
-            p.kreflection;
+            p.k_refl;
         return is;
     }
 };
@@ -162,21 +158,19 @@ struct LightParams {
 };
 
 struct Params {
-    int nframes;
-    std::string output_pattern;
-    int w, h;
+    int nframes, w, h;
+    int lights_num;
     double angle;
     CameraMovement camera_center, camera_dir;
     FigureParams hex, octa, icos;
     FloorParams floor;
-    int nlights;
+    
+    std::string output_pattern;
     std::vector<LightParams> lights;
 
     friend std::istream &operator>>(std::istream &is, Params &p) {
-        is >> p.nframes >> p.output_pattern >> p.w >> p.h >> p.angle >>
-            p.camera_center >> p.camera_dir >> p.hex >> p.octa >> p.icos >>
-            p.floor >> p.nlights;
-        p.lights.resize(p.nlights);
+        is >> p.nframes >> p.output_pattern >> p.w >> p.h >> p.angle >> p.camera_center >> p.camera_dir >> p.hex >> p.octa >> p.icos >> p.floor >> p.lights_num;
+        p.lights.resize(p.lights_num);
         for (auto &it : p.lights) is >> it;
         return is;
     }
@@ -193,7 +187,7 @@ void mpi_bcast_floor_params(FloorParams &p, MPI_Comm comm) {
     CHECK_MPI(MPI_Bcast((char *)p.texture_path.data(), texture_path_size,
                         MPI_CHAR, 0, comm));
     CHECK_MPI(MPI_Bcast(&p.color, sizeof(Vector3d), MPI_BYTE, 0, comm));
-    CHECK_MPI(MPI_Bcast(&p.kreflection, 1, MPI_DOUBLE, 0, comm));
+    CHECK_MPI(MPI_Bcast(&p.k_refl, 1, MPI_DOUBLE, 0, comm));
 }
 
 void mpi_bcast_params(Params &p, MPI_Comm comm) {
@@ -214,9 +208,9 @@ void mpi_bcast_params(Params &p, MPI_Comm comm) {
     CHECK_MPI(MPI_Bcast(&p.octa, sizeof(FigureParams), MPI_BYTE, 0, comm));
     CHECK_MPI(MPI_Bcast(&p.icos, sizeof(FigureParams), MPI_BYTE, 0, comm));
 
-    CHECK_MPI(MPI_Bcast(&p.nlights, 1, MPI_INT, 0, comm));
-    p.lights.resize(p.nlights);
-    CHECK_MPI(MPI_Bcast(p.lights.data(), sizeof(LightParams) * p.nlights,
+    CHECK_MPI(MPI_Bcast(&p.lights_num, 1, MPI_INT, 0, comm));
+    p.lights.resize(p.lights_num);
+    CHECK_MPI(MPI_Bcast(p.lights.data(), sizeof(LightParams) * p.lights_num,
                         MPI_BYTE, 0, comm));
 }
 
@@ -458,7 +452,7 @@ __host__ __device__ Vector3d phong_model(const Vector3d &pos,
                                          const Vector3d &dir, const Trig &trig,
                                          const Trig *scene_trigs, int ntrigs,
                                          const LightParams *lights,
-                                         int nlights) {
+                                         int lights_num) {
     Vector3d normal =
         normalize(cross_product(diff(trig.b, trig.a), diff(trig.c, trig.a)));
 
@@ -466,7 +460,7 @@ __host__ __device__ Vector3d phong_model(const Vector3d &pos,
     Vector3d diffuse{0., 0., 0.};
     Vector3d specular{0., 0., 0.};
 
-    for (int i = 0; i < nlights; ++i) {
+    for (int i = 0; i < lights_num; ++i) {
         Vector3d light_pos = lights[i].pos;
         Vector3d L = diff(light_pos, pos);
         double d = norm(L);
@@ -495,7 +489,7 @@ __host__ __device__ Vector3d phong_model(const Vector3d &pos,
 
 __host__ __device__ uchar4 ray(const Vector3d &pos, const Vector3d &dir,
                                const Trig *scene_trigs, int ntrigs,
-                               LightParams *lights, int nlights) {
+                               LightParams *lights, int lights_num) {
     int k, k_min = -1;
     double ts_min;
     for (k = 0; k < ntrigs; k++) {
@@ -520,12 +514,12 @@ __host__ __device__ uchar4 ray(const Vector3d &pos, const Vector3d &dir,
     if (k_min == -1) return {0, 0, 0, 0};
     return color_from_normalized(phong_model(add(mult(dir, ts_min), pos), dir,
                                              scene_trigs[k_min], scene_trigs,
-                                             ntrigs, lights, nlights));
+                                             ntrigs, lights, lights_num));
 }
 
 void render_omp(uchar4 *data, int w, int h, Vector3d pc, Vector3d pv,
                 double angle, const Trig *scene_trigs, int ntrigs,
-                LightParams *lights, int nlights) {
+                LightParams *lights, int lights_num) {
     double dw = 2.0 / (w - 1.0);
     double dh = 2.0 / (h - 1.0);
     double z = 1.0 / tan(angle * M_PI / 360.0);
@@ -539,13 +533,13 @@ void render_omp(uchar4 *data, int w, int h, Vector3d pc, Vector3d pv,
         Vector3d v = {-1.0 + dw * i, (-1.0 + dh * j) * h / w, z};
         Vector3d dir = mult(bx, by, bz, v);
         data[(h - 1 - j) * w + i] =
-            ray(pc, normalize(dir), scene_trigs, ntrigs, lights, nlights);
+            ray(pc, normalize(dir), scene_trigs, ntrigs, lights, lights_num);
     }
 }
 
 __global__ void render_cuda(uchar4 *data, int w, int h, Vector3d pc,
                             Vector3d pv, double angle, const Trig *scene_trigs,
-                            int ntrigs, LightParams *lights, int nlights) {
+                            int ntrigs, LightParams *lights, int lights_num) {
     int id_x = threadIdx.x + blockIdx.x * blockDim.x;
     int id_y = threadIdx.y + blockIdx.y * blockDim.y;
 
@@ -563,7 +557,7 @@ __global__ void render_cuda(uchar4 *data, int w, int h, Vector3d pc,
             Vector3d v = {-1.0 + dw * i, (-1.0 + dh * j) * h / w, z};
             Vector3d dir = mult(bx, by, bz, v);
             data[(h - 1 - j) * w + i] =
-                ray(pc, normalize(dir), scene_trigs, ntrigs, lights, nlights);
+                ray(pc, normalize(dir), scene_trigs, ntrigs, lights, lights_num);
         }
 }
 
@@ -683,12 +677,12 @@ int main(int argc, char *argv[]) {
 
     Trig *gpu_scene_trigs;
     LightParams *gpu_lights;
-    if (flags.parallelization_policy == ParallelizationPolicy::CUDA) {
+    if (flags.parallelizationMethod == ParallelizationPolicy::CUDA) {
         auto trigs_size = sizeof(Trig) * scene_trigs.size();
         CHECK_CUDART(cudaMalloc(&gpu_scene_trigs, trigs_size));
         CHECK_CUDART(cudaMemcpy(gpu_scene_trigs, scene_trigs.data(), trigs_size,
                                 cudaMemcpyHostToDevice));
-        auto lights_size = sizeof(LightParams) * params.nlights;
+        auto lights_size = sizeof(LightParams) * params.lights_num;
         CHECK_CUDART(cudaMalloc(&gpu_lights, lights_size));
         CHECK_CUDART(cudaMemcpy(gpu_lights, params.lights.data(), lights_size,
                                 cudaMemcpyHostToDevice));
@@ -702,7 +696,7 @@ int main(int argc, char *argv[]) {
     std::vector<uchar4> data_render(render_size),
         data_ssaa(params.w * params.h);
     uchar4 *gpu_data_render, *gpu_data_ssaa;
-    if (flags.parallelization_policy == ParallelizationPolicy::CUDA) {
+    if (flags.parallelizationMethod == ParallelizationPolicy::CUDA) {
         CHECK_CUDART(
             cudaMalloc(&gpu_data_render, sizeof(uchar4) * render_size));
         CHECK_CUDART(
@@ -714,7 +708,7 @@ int main(int argc, char *argv[]) {
                                      0.01 * (double)frame, &pc, &pv);
         auto start = std::chrono::high_resolution_clock::now();
 
-        if (flags.parallelization_policy == ParallelizationPolicy::OpenMP) {
+        if (flags.parallelizationMethod == ParallelizationPolicy::OpenMP) {
             render_omp(data_render.data(), render_w, render_h, pc, pv,
                        params.angle, scene_trigs.data(), scene_trigs.size(),
                        params.lights.data(), params.lights.size());
@@ -722,7 +716,7 @@ int main(int argc, char *argv[]) {
                      render_w, render_h);
         }
 
-        if (flags.parallelization_policy == ParallelizationPolicy::CUDA) {
+        if (flags.parallelizationMethod == ParallelizationPolicy::CUDA) {
             render_cuda<<<NBLOCKSD2, NTHREADSD2>>>(
                 gpu_data_render, render_w, render_h, pc, pv, params.angle,
                 gpu_scene_trigs, scene_trigs.size(), gpu_lights,
@@ -745,7 +739,7 @@ int main(int argc, char *argv[]) {
                   << "ms" << std::endl;
     }
 
-    if (flags.parallelization_policy == ParallelizationPolicy::CUDA) {
+    if (flags.parallelizationMethod == ParallelizationPolicy::CUDA) {
         CHECK_CUDART(cudaFree(gpu_scene_trigs));
         CHECK_CUDART(cudaFree(gpu_lights));
         CHECK_CUDART(cudaFree(gpu_data_ssaa));
