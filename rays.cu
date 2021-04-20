@@ -28,7 +28,7 @@
         exit(0);                                                \
     } while (0)
 
-#define CHECK_CUDART(call)                  \
+#define CSC(call)                  \
     do {                                    \
         cudaError_t res = call;             \
         if (res != cudaSuccess) {           \
@@ -603,26 +603,26 @@ int main(int argc, char *argv[]) {
     CHECK_MPI(MPI_Bcast(scene_Triangles.data(), sizeof(Triangle) * nTriangles, MPI_BYTE, 0, MPI_COMM_WORLD));
 
     int ndevices;
-    CHECK_CUDART(cudaGetDeviceCount(&ndevices));
-    CHECK_CUDART(cudaSetDevice(rank % ndevices));
+    CSC(cudaGetDeviceCount(&ndevices));
+    CSC(cudaSetDevice(rank % ndevices));
 
     Triangle *gpu_scene_Triangles;
     LightParams *gpu_lights;
     if (parallelizationMode == CUDA) {
         auto Triangles_size = sizeof(Triangle) * scene_Triangles.size();
-        CHECK_CUDART(cudaMalloc(&gpu_scene_Triangles, Triangles_size));
-        CHECK_CUDART(cudaMemcpy(gpu_scene_Triangles, scene_Triangles.data(), Triangles_size, cudaMemcpyHostToDevice));
+        CSC(cudaMalloc(&gpu_scene_Triangles, Triangles_size));
+        CSC(cudaMemcpy(gpu_scene_Triangles, scene_Triangles.data(), Triangles_size, cudaMemcpyHostToDevice));
         auto lights_size = sizeof(LightParams) * params.lights_num;
-        CHECK_CUDART(cudaMalloc(&gpu_lights, lights_size));
-        CHECK_CUDART(cudaMemcpy(gpu_lights, params.lights.data(), lights_size, cudaMemcpyHostToDevice));
+        CSC(cudaMalloc(&gpu_lights, lights_size));
+        CSC(cudaMemcpy(gpu_lights, params.lights.data(), lights_size, cudaMemcpyHostToDevice));
     }
 
     CHECK_MPI(MPI_Barrier(MPI_COMM_WORLD));
     std::vector<uchar4> data_render(SSSAx*params.w * SSSAx*params.h), data_ssaa(params.w * params.h);
     uchar4 *gpu_data_render, *gpu_data_ssaa;
     if (parallelizationMode == CUDA) {
-        CHECK_CUDART(cudaMalloc(&gpu_data_render, sizeof(uchar4) * SSSAx*params.w * SSSAx*params.h));
-        CHECK_CUDART(cudaMalloc(&gpu_data_ssaa, sizeof(uchar4) * params.w * params.h));
+        CSC(cudaMalloc(&gpu_data_render, sizeof(uchar4) * SSSAx*params.w * SSSAx*params.h));
+        CSC(cudaMalloc(&gpu_data_ssaa, sizeof(uchar4) * params.w * params.h));
     }
     for (int frame = rank; frame < params.nframes; frame += nprocesses) {
         Vector3<double> pc, pv;
@@ -636,9 +636,9 @@ int main(int argc, char *argv[]) {
 
         if (parallelizationMode == CUDA) {
             getRenderCUDA<<<NBLOCKSD2, NTHREADSD2>>>(gpu_data_render, SSSAx*params.w, SSSAx*params.h, pc, pv, params.angle,gpu_scene_Triangles, scene_Triangles.size(), gpu_lights, params.lights.size());
-            CHECK_CUDART(cudaDeviceSynchronize());
+            CSC(cudaDeviceSynchronize());
             getSSAA_CUDA<<<NBLOCKSD2, NTHREADSD2>>>(gpu_data_ssaa, gpu_data_render, params.w, params.h, SSSAx*params.w, SSSAx*params.h);
-            CHECK_CUDART(cudaMemcpy(data_ssaa.data(), gpu_data_ssaa,sizeof(uchar4) * params.w * params.h, cudaMemcpyDeviceToHost));
+            CSC(cudaMemcpy(data_ssaa.data(), gpu_data_ssaa,sizeof(uchar4) * params.w * params.h, cudaMemcpyDeviceToHost));
         }
 
         char output_path[256];
@@ -649,10 +649,10 @@ int main(int argc, char *argv[]) {
     }
 
     if (parallelizationMode == CUDA) {
-        CHECK_CUDART(cudaFree(gpu_scene_Triangles));
-        CHECK_CUDART(cudaFree(gpu_lights));
-        CHECK_CUDART(cudaFree(gpu_data_ssaa));
-        CHECK_CUDART(cudaFree(gpu_data_render));
+        CSC(cudaFree(gpu_scene_Triangles));
+        CSC(cudaFree(gpu_lights));
+        CSC(cudaFree(gpu_data_ssaa));
+        CSC(cudaFree(gpu_data_render));
     }
 
     return 0;
