@@ -552,13 +552,6 @@ void write_image(const std::string &path, const std::vector<uchar4> &data, int w
     CHECK_MPI(MPI_File_close(&file));
 }
 
-void mpi_bcast_scene_Triangles(std::vector<Triangle> &Triangles, MPI_Comm comm) {
-    int nTriangles = Triangles.size();
-    CHECK_MPI(MPI_Bcast(&nTriangles, 1, MPI_INT, 0, comm));
-    Triangles.resize(nTriangles);
-    CHECK_MPI(MPI_Bcast(Triangles.data(), sizeof(Triangle) * nTriangles, MPI_BYTE, 0, comm));
-}
-
 void signal_handler(int signal){
     std::cout << "Error. Bad signal: " << signal << std::endl;
     MPI_Finalize();
@@ -577,9 +570,15 @@ int main(int argc, char *argv[]) {
     CHECK_MPI(MPI_Comm_rank(MPI_COMM_WORLD, &rank));
     CHECK_MPI(MPI_Comm_size(MPI_COMM_WORLD, &nprocesses));
 
+    CHECK_MPI(MPI_Barrier(MPI_COMM_WORLD));
+    std::vector<Triangle> scene_Triangles;
     Params params;
     if (rank == 0) {
         std::cin >> params;
+        import_obj_to_scene(scene_Triangles, "hex.obj", params.hex);
+        import_obj_to_scene(scene_Triangles, "octa.obj", params.octa);
+        import_obj_to_scene(scene_Triangles, "icos.obj", params.icos);
+        add_floor_to_scene(scene_Triangles, params.floor);
     }
 
     int output_pattern_size = params.output_pattern.size();
@@ -611,19 +610,14 @@ int main(int argc, char *argv[]) {
     CHECK_MPI(MPI_Bcast(&params.lights_num, 1, MPI_INT, 0, MPI_COMM_WORLD));
     CHECK_MPI(MPI_Bcast(params.lights.data(), sizeof(LightParams) * params.lights_num, MPI_BYTE, 0, MPI_COMM_WORLD));
 
+    int nTriangles = scene_Triangles.size();
+    CHECK_MPI(MPI_Bcast(&nTriangles, 1, MPI_INT, 0, MPI_COMM_WORLD));
+    scene_Triangles.resize(nTriangles);
+    CHECK_MPI(MPI_Bcast(scene_Triangles.data(), sizeof(Triangle) * nTriangles, MPI_BYTE, 0, MPI_COMM_WORLD));
+
     int ndevices;
     CHECK_CUDART(cudaGetDeviceCount(&ndevices));
     CHECK_CUDART(cudaSetDevice(rank % ndevices));
-
-    CHECK_MPI(MPI_Barrier(MPI_COMM_WORLD));
-    std::vector<Triangle> scene_Triangles;
-    if (rank == 0) { // TODO
-        import_obj_to_scene(scene_Triangles, "hex.obj", params.hex);
-        import_obj_to_scene(scene_Triangles, "octa.obj", params.octa);
-        import_obj_to_scene(scene_Triangles, "icos.obj", params.icos);
-        add_floor_to_scene(scene_Triangles, params.floor);
-    }
-    mpi_bcast_scene_Triangles(scene_Triangles, MPI_COMM_WORLD);
 
     Triangle *gpu_scene_Triangles;
     LightParams *gpu_lights;
