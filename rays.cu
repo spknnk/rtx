@@ -626,7 +626,7 @@ int main(int argc, char *argv[]) {
     }
     for (int frame = rank; frame < params.nframes; frame += nprocesses) {
         Vector3<double> pc, pv;
-        getCameraPos(params.camera_center, params.camera_dir, 0.01 * (double)frame, &pc, &pv);
+        getCameraPos(params.camera_center, params.camera_dir, 0.1 * (double)frame, &pc, &pv);
         auto start = std::chrono::high_resolution_clock::now();
 
         if (parallelizationMode == OpenMP) {
