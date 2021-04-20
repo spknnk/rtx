@@ -18,6 +18,8 @@
 #define NBLOCKSD2 dim3(16, 16)
 #define NTHREADSD2 dim3(16, 16)
 
+#define SSSAx 2
+
 #define FATAL(description)                                      \
     do {                                                        \
         std::cout << "Error in " << __FILE__ << ":" << __LINE__ \
@@ -615,16 +617,11 @@ int main(int argc, char *argv[]) {
         CHECK_CUDART(cudaMemcpy(gpu_lights, params.lights.data(), lights_size, cudaMemcpyHostToDevice));
     }
 
-    const int ssaa_rate = 2;
-    int render_w = ssaa_rate * params.w;
-    int render_h = ssaa_rate * params.h;
-    int render_size = render_w * render_h;
-
     CHECK_MPI(MPI_Barrier(MPI_COMM_WORLD));
-    std::vector<uchar4> data_render(render_size), data_ssaa(params.w * params.h);
+    std::vector<uchar4> data_render(SSSAx*params.w * SSSAx*params.h), data_ssaa(params.w * params.h);
     uchar4 *gpu_data_render, *gpu_data_ssaa;
     if (parallelizationMode == CUDA) {
-        CHECK_CUDART(cudaMalloc(&gpu_data_render, sizeof(uchar4) * render_size));
+        CHECK_CUDART(cudaMalloc(&gpu_data_render, sizeof(uchar4) * SSSAx*params.w * SSSAx*params.h));
         CHECK_CUDART(cudaMalloc(&gpu_data_ssaa, sizeof(uchar4) * params.w * params.h));
     }
     for (int frame = rank; frame < params.nframes; frame += nprocesses) {
@@ -633,14 +630,14 @@ int main(int argc, char *argv[]) {
         auto start = std::chrono::high_resolution_clock::now();
 
         if (parallelizationMode == OpenMP) {
-            getRenderOMP(data_render.data(), render_w, render_h, pc, pv, params.angle, scene_Triangles.data(), scene_Triangles.size(), params.lights.data(), params.lights.size());
-            getSSAA_OMP(data_ssaa.data(), data_render.data(), params.w, params.h,render_w, render_h);
+            getRenderOMP(data_render.data(), SSSAx*params.w, SSSAx*params.h, pc, pv, params.angle, scene_Triangles.data(), scene_Triangles.size(), params.lights.data(), params.lights.size());
+            getSSAA_OMP(data_ssaa.data(), data_render.data(), params.w, params.h, SSSAx*params.w, SSSAx*params.h);
         }
 
         if (parallelizationMode == CUDA) {
-            getRenderCUDA<<<NBLOCKSD2, NTHREADSD2>>>(gpu_data_render, render_w, render_h, pc, pv, params.angle,gpu_scene_Triangles, scene_Triangles.size(), gpu_lights, params.lights.size());
+            getRenderCUDA<<<NBLOCKSD2, NTHREADSD2>>>(gpu_data_render, SSSAx*params.w, SSSAx*params.h, pc, pv, params.angle,gpu_scene_Triangles, scene_Triangles.size(), gpu_lights, params.lights.size());
             CHECK_CUDART(cudaDeviceSynchronize());
-            getSSAA_CUDA<<<NBLOCKSD2, NTHREADSD2>>>(gpu_data_ssaa, gpu_data_render, params.w, params.h, render_w, render_h);
+            getSSAA_CUDA<<<NBLOCKSD2, NTHREADSD2>>>(gpu_data_ssaa, gpu_data_render, params.w, params.h, SSSAx*params.w, SSSAx*params.h);
             CHECK_CUDART(cudaMemcpy(data_ssaa.data(), gpu_data_ssaa,sizeof(uchar4) * params.w * params.h, cudaMemcpyDeviceToHost));
         }
 
