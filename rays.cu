@@ -20,7 +20,7 @@
 
 #define FATAL(description)                                      \
     do {                                                        \
-        std::cerr << "Error in " << __FILE__ << ":" << __LINE__ \
+        std::cout << "Error in " << __FILE__ << ":" << __LINE__ \
                   << ". Message: " << description << std::endl; \
         MPI_Finalize();                                         \
         exit(0);                                                \
@@ -45,7 +45,7 @@
         }                                      \
     } while (0)
 
-enum class ParallelizationPolicy { CUDA, OpenMP };
+enum class ParallelizationPolicy { CUDA, OpenMP }; // TODO
 
 struct Flags {
     ParallelizationPolicy parallelizationMethod;
@@ -68,13 +68,13 @@ void parse_flags(int argc, char *argv[]) {
         }
         
         else if ((strcmp(argv[1], "--cpu") != 0) and (strcmp(argv[1], "--gpu") != 0)) {
-            std::cerr << "Unknown args" << std::endl;
+            std::cout << "Unknown args" << std::endl;
             MPI_Finalize();
             exit(0);
         }
     }
     if (argc > 2) {
-        std::cerr << "A lot of args" << std::endl;
+        std::cout << "A lot of args" << std::endl;
         MPI_Finalize();
         exit(0);
     }
@@ -164,38 +164,6 @@ struct Params {
         return is;
     }
 };
-
-void mpi_bcast_params(Params &p, MPI_Comm comm) {
-    CHECK_MPI(MPI_Bcast(&p.nframes, 1, MPI_INT, 0, comm));
-    int output_pattern_size = p.output_pattern.size();
-    CHECK_MPI(MPI_Bcast(&output_pattern_size, 1, MPI_INT, 0, comm));
-    p.output_pattern.resize(output_pattern_size);
-    CHECK_MPI(MPI_Bcast((char *)p.output_pattern.data(), output_pattern_size, MPI_CHAR, 0, comm));
-    CHECK_MPI(MPI_Bcast(&p.w, 1, MPI_INT, 0, comm));
-    CHECK_MPI(MPI_Bcast(&p.h, 1, MPI_INT, 0, comm));
-    CHECK_MPI(MPI_Bcast(&p.angle, 1, MPI_DOUBLE, 0, comm));
-    CHECK_MPI(MPI_Bcast(&p.camera_center, sizeof(CameraMovement), MPI_BYTE, 0, comm));
-    CHECK_MPI(MPI_Bcast(&p.camera_dir, sizeof(CameraMovement), MPI_BYTE, 0, comm));
-    CHECK_MPI(MPI_Bcast(&p.hex, sizeof(FigureParams), MPI_BYTE, 0, comm));
-    CHECK_MPI(MPI_Bcast(&p.octa, sizeof(FigureParams), MPI_BYTE, 0, comm));
-    CHECK_MPI(MPI_Bcast(&p.icos, sizeof(FigureParams), MPI_BYTE, 0, comm));
-
-    // bcast floor params
-    CHECK_MPI(MPI_Bcast(&p.floor.a, sizeof(Vector3d), MPI_BYTE, 0, comm));
-    CHECK_MPI(MPI_Bcast(&p.floor.b, sizeof(Vector3d), MPI_BYTE, 0, comm));
-    CHECK_MPI(MPI_Bcast(&p.floor.c, sizeof(Vector3d), MPI_BYTE, 0, comm));
-    CHECK_MPI(MPI_Bcast(&p.floor.d, sizeof(Vector3d), MPI_BYTE, 0, comm));
-    int texture_path_size = p.floor.texture_path.size();
-    CHECK_MPI(MPI_Bcast(&texture_path_size, 1, MPI_INT, 0, comm));
-    p.floor.texture_path.resize(texture_path_size);
-    CHECK_MPI(MPI_Bcast((char *)p.floor.texture_path.data(), texture_path_size, MPI_CHAR, 0, comm));
-    CHECK_MPI(MPI_Bcast(&p.floor.color, sizeof(Vector3d), MPI_BYTE, 0, comm));
-    CHECK_MPI(MPI_Bcast(&p.floor.k_refl, 1, MPI_DOUBLE, 0, comm));
-
-    p.lights.resize(p.lights_num);
-    CHECK_MPI(MPI_Bcast(&p.lights_num, 1, MPI_INT, 0, comm));
-    CHECK_MPI(MPI_Bcast(p.lights.data(), sizeof(LightParams) * p.lights_num, MPI_BYTE, 0, comm));
-}
 
 struct Triangle {
     Vector3d a, b, c, color;
@@ -481,7 +449,7 @@ __host__ __device__ uchar4 ray(const Vector3d &pos, const Vector3d &dir, const T
     return color_from_normalized(phong_model(add(mult(dir, ts_min), pos), dir, scene_Triangles[k_min], scene_Triangles, nTriangles, lights, lights_num));
 }
 
-void render_omp(uchar4 *data, int w, int h, Vector3d pc, Vector3d pv, double angle, const Triangle *scene_Triangles, int nTriangles, LightParams *lights, int lights_num) {
+void getRenderOMP(uchar4 *data, int w, int h, Vector3d pc, Vector3d pv, double angle, const Triangle *scene_Triangles, int nTriangles, LightParams *lights, int lights_num) {
     double dw = 2.0 / (w - 1.0);
     double dh = 2.0 / (h - 1.0);
     double z = 1.0 / tan(angle * M_PI / 360.0);
@@ -498,7 +466,7 @@ void render_omp(uchar4 *data, int w, int h, Vector3d pc, Vector3d pv, double ang
     }
 }
 
-__global__ void render_cuda(uchar4 *data, int w, int h, Vector3d pc, Vector3d pv, double angle, const Triangle *scene_Triangles, int nTriangles, LightParams *lights, int lights_num) {
+__global__ void getRenderCUDA(uchar4 *data, int w, int h, Vector3d pc, Vector3d pv, double angle, const Triangle *scene_Triangles, int nTriangles, LightParams *lights, int lights_num) {
     int id_x = threadIdx.x + blockIdx.x * blockDim.x;
     int id_y = threadIdx.y + blockIdx.y * blockDim.y;
 
@@ -531,7 +499,7 @@ __host__ __device__ uchar4 SSAA(uchar4 *data, int i, int j, int w, int h, int ke
     return make_uchar4(pix.x, pix.y, pix.z, 0);
 }
 
-__global__ void ssaa_cuda(uchar4 *dst, uchar4 *src, int new_w, int new_h, int w, int h) {
+__global__ void getSSAA_CUDA(uchar4 *dst, uchar4 *src, int new_w, int new_h, int w, int h) {
     int id_x = threadIdx.x + blockIdx.x * blockDim.x;
     int id_y = threadIdx.y + blockIdx.y * blockDim.y;
 
@@ -551,7 +519,7 @@ __global__ void ssaa_cuda(uchar4 *dst, uchar4 *src, int new_w, int new_h, int w,
     }
 }
 
-void ssaa_omp(uchar4 *dst, uchar4 *src, int new_w, int new_h, int w, int h) {
+void getSSAA_OMP(uchar4 *dst, uchar4 *src, int new_w, int new_h, int w, int h) {
     int kernel_w = w / new_w, kernel_h = h / new_h;
 #pragma omp parallel for
     for (int pix = 0; pix < new_h * new_h; ++pix) {
@@ -566,7 +534,7 @@ void ssaa_omp(uchar4 *dst, uchar4 *src, int new_w, int new_h, int w, int h) {
     }
 }
 
-void CameraPos(const CameraMovement &c, const CameraMovement &n, double t, Vector3d *pc, Vector3d *pv) {
+void getCameraPos(const CameraMovement &c, const CameraMovement &n, double t, Vector3d *pc, Vector3d *pv) {
     double phic = c.phi0 + c.wphi * t, phin = n.phi0 + n.wphi * t;
     double rc = c.r0 + c.ar * sin(c.wr * t + c.pr), zc = c.z0 + c.ar * sin(c.wz * t + c.pz);
     double rn = n.r0 + n.ar * sin(n.wr * t + n.pr), zn = n.z0 + n.ar * sin(n.wz * t + n.pz);
@@ -591,7 +559,7 @@ void mpi_bcast_scene_Triangles(std::vector<Triangle> &Triangles, MPI_Comm comm) 
     CHECK_MPI(MPI_Bcast(Triangles.data(), sizeof(Triangle) * nTriangles, MPI_BYTE, 0, comm));
 }
 
-void nop_handler(int signal){
+void signal_handler(int signal){
     std::cout << "Error. Bad signal: " << signal << std::endl;
     MPI_Finalize();
     exit(0);
@@ -599,8 +567,8 @@ void nop_handler(int signal){
 
 int main(int argc, char *argv[]) {
 
-    std::signal(SIGSEGV, nop_handler);
-    std::signal(SIGABRT, nop_handler);
+    std::signal(SIGSEGV, signal_handler);
+    std::signal(SIGABRT, signal_handler);
 
     MPIContext ctx(&argc, &argv);
     parse_flags(argc, argv);
@@ -613,16 +581,43 @@ int main(int argc, char *argv[]) {
     if (rank == 0) {
         std::cin >> params;
     }
-    mpi_bcast_params(params, MPI_COMM_WORLD);
+
+    int output_pattern_size = params.output_pattern.size();
+    CHECK_MPI(MPI_Bcast(&params.nframes, 1, MPI_INT, 0, MPI_COMM_WORLD));
+    CHECK_MPI(MPI_Bcast(&output_pattern_size, 1, MPI_INT, 0, MPI_COMM_WORLD));
+    params.output_pattern.resize(output_pattern_size);
+    CHECK_MPI(MPI_Bcast((char *)params.output_pattern.data(), output_pattern_size, MPI_CHAR, 0, MPI_COMM_WORLD));
+    CHECK_MPI(MPI_Bcast(&params.w, 1, MPI_INT, 0, MPI_COMM_WORLD));
+    CHECK_MPI(MPI_Bcast(&params.h, 1, MPI_INT, 0, MPI_COMM_WORLD));
+    CHECK_MPI(MPI_Bcast(&params.angle, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD));
+    CHECK_MPI(MPI_Bcast(&params.camera_center, sizeof(CameraMovement), MPI_BYTE, 0, MPI_COMM_WORLD));
+    CHECK_MPI(MPI_Bcast(&params.camera_dir, sizeof(CameraMovement), MPI_BYTE, 0, MPI_COMM_WORLD));
+    CHECK_MPI(MPI_Bcast(&params.hex, sizeof(FigureParams), MPI_BYTE, 0, MPI_COMM_WORLD));
+    CHECK_MPI(MPI_Bcast(&params.octa, sizeof(FigureParams), MPI_BYTE, 0, MPI_COMM_WORLD));
+    CHECK_MPI(MPI_Bcast(&params.icos, sizeof(FigureParams), MPI_BYTE, 0, MPI_COMM_WORLD));
+
+    CHECK_MPI(MPI_Bcast(&params.floor.a, sizeof(Vector3d), MPI_BYTE, 0, MPI_COMM_WORLD));
+    CHECK_MPI(MPI_Bcast(&params.floor.b, sizeof(Vector3d), MPI_BYTE, 0, MPI_COMM_WORLD));
+    CHECK_MPI(MPI_Bcast(&params.floor.c, sizeof(Vector3d), MPI_BYTE, 0, MPI_COMM_WORLD));
+    CHECK_MPI(MPI_Bcast(&params.floor.d, sizeof(Vector3d), MPI_BYTE, 0, MPI_COMM_WORLD));
+    int texture_path_size = params.floor.texture_path.size();
+    CHECK_MPI(MPI_Bcast(&texture_path_size, 1, MPI_INT, 0, MPI_COMM_WORLD));
+    params.floor.texture_path.resize(texture_path_size);
+    CHECK_MPI(MPI_Bcast((char *)params.floor.texture_path.data(), texture_path_size, MPI_CHAR, 0, MPI_COMM_WORLD));
+    CHECK_MPI(MPI_Bcast(&params.floor.color, sizeof(Vector3d), MPI_BYTE, 0, MPI_COMM_WORLD));
+    CHECK_MPI(MPI_Bcast(&params.floor.k_refl, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD));
+
+    params.lights.resize(params.lights_num);
+    CHECK_MPI(MPI_Bcast(&params.lights_num, 1, MPI_INT, 0, MPI_COMM_WORLD));
+    CHECK_MPI(MPI_Bcast(params.lights.data(), sizeof(LightParams) * params.lights_num, MPI_BYTE, 0, MPI_COMM_WORLD));
 
     int ndevices;
     CHECK_CUDART(cudaGetDeviceCount(&ndevices));
-    int device = rank % ndevices;
-    CHECK_CUDART(cudaSetDevice(device));
+    CHECK_CUDART(cudaSetDevice(rank % ndevices));
 
     CHECK_MPI(MPI_Barrier(MPI_COMM_WORLD));
     std::vector<Triangle> scene_Triangles;
-    if (rank == 0) {
+    if (rank == 0) { // TODO
         import_obj_to_scene(scene_Triangles, "hex.obj", params.hex);
         import_obj_to_scene(scene_Triangles, "octa.obj", params.octa);
         import_obj_to_scene(scene_Triangles, "icos.obj", params.icos);
@@ -635,63 +630,46 @@ int main(int argc, char *argv[]) {
     if (flags.parallelizationMethod == ParallelizationPolicy::CUDA) {
         auto Triangles_size = sizeof(Triangle) * scene_Triangles.size();
         CHECK_CUDART(cudaMalloc(&gpu_scene_Triangles, Triangles_size));
-        CHECK_CUDART(cudaMemcpy(gpu_scene_Triangles, scene_Triangles.data(), Triangles_size,
-                                cudaMemcpyHostToDevice));
+        CHECK_CUDART(cudaMemcpy(gpu_scene_Triangles, scene_Triangles.data(), Triangles_size, cudaMemcpyHostToDevice));
         auto lights_size = sizeof(LightParams) * params.lights_num;
         CHECK_CUDART(cudaMalloc(&gpu_lights, lights_size));
-        CHECK_CUDART(cudaMemcpy(gpu_lights, params.lights.data(), lights_size,
-                                cudaMemcpyHostToDevice));
+        CHECK_CUDART(cudaMemcpy(gpu_lights, params.lights.data(), lights_size, cudaMemcpyHostToDevice));
     }
 
     const int ssaa_rate = 2;
-    int render_w = ssaa_rate * params.w, render_h = ssaa_rate * params.h;
+    int render_w = ssaa_rate * params.w;
+    int render_h = ssaa_rate * params.h;
     int render_size = render_w * render_h;
 
     CHECK_MPI(MPI_Barrier(MPI_COMM_WORLD));
-    std::vector<uchar4> data_render(render_size),
-        data_ssaa(params.w * params.h);
+    std::vector<uchar4> data_render(render_size), data_ssaa(params.w * params.h);
     uchar4 *gpu_data_render, *gpu_data_ssaa;
     if (flags.parallelizationMethod == ParallelizationPolicy::CUDA) {
-        CHECK_CUDART(
-            cudaMalloc(&gpu_data_render, sizeof(uchar4) * render_size));
-        CHECK_CUDART(
-            cudaMalloc(&gpu_data_ssaa, sizeof(uchar4) * params.w * params.h));
+        CHECK_CUDART(cudaMalloc(&gpu_data_render, sizeof(uchar4) * render_size));
+        CHECK_CUDART(cudaMalloc(&gpu_data_ssaa, sizeof(uchar4) * params.w * params.h));
     }
     for (int frame = rank; frame < params.nframes; frame += nprocesses) {
         Vector3d pc, pv;
-        CameraPos(params.camera_center, params.camera_dir,
-                                     0.01 * (double)frame, &pc, &pv);
+        getCameraPos(params.camera_center, params.camera_dir, 0.01 * (double)frame, &pc, &pv);
         auto start = std::chrono::high_resolution_clock::now();
 
         if (flags.parallelizationMethod == ParallelizationPolicy::OpenMP) {
-            render_omp(data_render.data(), render_w, render_h, pc, pv,
-                       params.angle, scene_Triangles.data(), scene_Triangles.size(),
-                       params.lights.data(), params.lights.size());
-            ssaa_omp(data_ssaa.data(), data_render.data(), params.w, params.h,
-                     render_w, render_h);
+            getRenderOMP(data_render.data(), render_w, render_h, pc, pv, params.angle, scene_Triangles.data(), scene_Triangles.size(), params.lights.data(), params.lights.size());
+            getSSAA_OMP(data_ssaa.data(), data_render.data(), params.w, params.h,render_w, render_h);
         }
 
         if (flags.parallelizationMethod == ParallelizationPolicy::CUDA) {
-            render_cuda<<<NBLOCKSD2, NTHREADSD2>>>(
-                gpu_data_render, render_w, render_h, pc, pv, params.angle,
-                gpu_scene_Triangles, scene_Triangles.size(), gpu_lights,
-                params.lights.size());
+            getRenderCUDA<<<NBLOCKSD2, NTHREADSD2>>>(gpu_data_render, render_w, render_h, pc, pv, params.angle,gpu_scene_Triangles, scene_Triangles.size(), gpu_lights, params.lights.size());
             CHECK_CUDART(cudaDeviceSynchronize());
-            ssaa_cuda<<<NBLOCKSD2, NTHREADSD2>>>(gpu_data_ssaa, gpu_data_render,
-                                                 params.w, params.h, render_w,
-                                                 render_h);
-            CHECK_CUDART(cudaMemcpy(data_ssaa.data(), gpu_data_ssaa,
-                                    sizeof(uchar4) * params.w * params.h,
-                                    cudaMemcpyDeviceToHost));
+            getSSAA_CUDA<<<NBLOCKSD2, NTHREADSD2>>>(gpu_data_ssaa, gpu_data_render, params.w, params.h, render_w, render_h);
+            CHECK_CUDART(cudaMemcpy(data_ssaa.data(), gpu_data_ssaa,sizeof(uchar4) * params.w * params.h, cudaMemcpyDeviceToHost));
         }
 
         char output_path[256];
         sprintf(output_path, params.output_pattern.data(), frame);
         write_image(output_path, data_ssaa, params.w, params.h);
-        auto time = std::chrono::duration_cast<std::chrono::milliseconds>(
-            std::chrono::high_resolution_clock::now() - start);
-        std::cerr << frame << "\t" << output_path << "\t" << time.count()
-                  << "ms" << std::endl;
+        auto time = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - start);
+        std::cout << frame << "\t" << output_path << "\t" << time.count() << "ms" << std::endl;
     }
 
     if (flags.parallelizationMethod == ParallelizationPolicy::CUDA) {
