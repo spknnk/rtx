@@ -45,26 +45,20 @@
         }                                      \
     } while (0)
 
-enum class ParallelizationPolicy { CUDA, OpenMP }; // TODO
-
-struct Flags {
-    ParallelizationPolicy parallelizationMethod;
-
-    Flags() : parallelizationMethod(ParallelizationPolicy::CUDA){};
-};
-
-static Flags flags;
+#define OpenMP 0
+#define CUDA 1
+int parallelizationMode = CUDA;
 
 void parse_flags(int argc, char *argv[]) {
    
     if (argc < 2) return;
     if (argc == 2) {
         if (strcmp(argv[1], "--gpu") == 0) {
-            flags.parallelizationMethod = ParallelizationPolicy::CUDA;
+            parallelizationMode = CUDA;
         }
         
         if (strcmp(argv[1], "--cpu") == 0) {
-            flags.parallelizationMethod = ParallelizationPolicy::OpenMP;
+            parallelizationMode = OpenMP;
         }
         
         else if ((strcmp(argv[1], "--cpu") != 0) and (strcmp(argv[1], "--gpu") != 0)) {
@@ -101,21 +95,17 @@ struct Vector3 {
     }
 };
 
-using Vector3d = Vector3<double>;
-
 struct CameraMovement {
     double r0, z0, phi0, ar, az, wr, wz, wphi, pr, pz;
 
-    friend std::istream &operator>>(std::istream &is,
-                                    CameraMovement &p) {
-        is >> p.r0 >> p.z0 >> p.phi0 >> p.ar >> p.az >> p.wr >> p.wz >>
-            p.wphi >> p.pr >> p.pz;
+    friend std::istream &operator>>(std::istream &is, CameraMovement &p) {
+        is >> p.r0 >> p.z0 >> p.phi0 >> p.ar >> p.az >> p.wr >> p.wz >> p.wphi >> p.pr >> p.pz;
         return is;
     }
 };
 
 struct FigureParams {
-    Vector3d center, color;
+    Vector3<double> center, color;
     double radius, k_refl, k_refr;
     int lights_num;
 
@@ -126,20 +116,19 @@ struct FigureParams {
 };
 
 struct FloorParams {
-    Vector3d a, b, c, d, color;
+    Vector3<double> a, b, c, d, color;
     double k_refl;
     std::string texture_path;
 
     friend std::istream &operator>>(std::istream &is, FloorParams &p) {
-        is >> p.a >> p.b >> p.c >> p.d >> p.texture_path >> p.color >>
-            p.k_refl;
+        is >> p.a >> p.b >> p.c >> p.d >> p.texture_path >> p.color >> p.k_refl;
         return is;
     }
 };
 
 struct LightParams {
-    Vector3d pos;
-    Vector3d color;
+    Vector3<double> pos;
+    Vector3<double> color;
 
     friend std::istream &operator>>(std::istream &is, LightParams &p) {
         is >> p.pos >> p.color;
@@ -166,7 +155,7 @@ struct Params {
 };
 
 struct Triangle {
-    Vector3d a, b, c, color;
+    Vector3<double> a, b, c, color;
 };
 
 template <typename T>
@@ -181,58 +170,58 @@ __host__ __device__ T max(const T &a, const T &b) {
     return b;
 }
 
-__host__ __device__ double dot_product(const Vector3d &a, const Vector3d &b) {
+__host__ __device__ double dot_product(const Vector3<double> &a, const Vector3<double> &b) {
     return a.x * b.x + a.y * b.y + a.z * b.z;
 }
 
-__host__ __device__ Vector3d cross_product(const Vector3d &a, const Vector3d &b) {
+__host__ __device__ Vector3<double> cross_product(const Vector3<double> &a, const Vector3<double> &b) {
     return {a.y * b.z - a.z * b.y, a.z * b.x - a.x * b.z,a.x * b.y - a.y * b.x};
 }
 
-__host__ __device__ double norm(const Vector3d &v) {
+__host__ __device__ double norm(const Vector3<double> &v) {
     return sqrt(dot_product(v, v));
 }
 
-__host__ __device__ Vector3d normalize(const Vector3d &v) {
+__host__ __device__ Vector3<double> normalize(const Vector3<double> &v) {
     double l = norm(v);
     return {v.x / l, v.y / l, v.z / l};
 }
 
-__host__ __device__ Vector3d diff(const Vector3d &a, const Vector3d &b) {
+__host__ __device__ Vector3<double> diff(const Vector3<double> &a, const Vector3<double> &b) {
     return {a.x - b.x, a.y - b.y, a.z - b.z};
 }
 
-__host__ __device__ Vector3d add(const Vector3d &a, const Vector3d &b) {
+__host__ __device__ Vector3<double> add(const Vector3<double> &a, const Vector3<double> &b) {
     return {a.x + b.x, a.y + b.y, a.z + b.z};
 }
 
-__host__ __device__ Vector3d mult(const Vector3d &a, const Vector3d &b) {
+__host__ __device__ Vector3<double> mult(const Vector3<double> &a, const Vector3<double> &b) {
     return {b.x * a.x, b.y * a.y, b.z * a.z};
 }
 
-__host__ __device__ Vector3d mult(const Vector3d &a, double k) {
+__host__ __device__ Vector3<double> mult(const Vector3<double> &a, double k) {
     return {k * a.x, k * a.y, k * a.z};
 }
 
-__host__ __device__ Vector3d mult(const Vector3d &a, const Vector3d &b, const Vector3d &c, const Vector3d &d) {
+__host__ __device__ Vector3<double> mult(const Vector3<double> &a, const Vector3<double> &b, const Vector3<double> &c, const Vector3<double> &d) {
     return {a.x * d.x + b.x * d.y + c.x * d.z,
             a.y * d.x + b.y * d.y + c.y * d.z,
             a.z * d.x + b.z * d.y + c.z * d.z};
 }
 
-__host__ __device__ Vector3d inverse(const Vector3d &v) {
+__host__ __device__ Vector3<double> inverse(const Vector3<double> &v) {
     return {-v.x, -v.y, -v.z};
 }
 
-__host__ __device__ Vector3d div(const Vector3d &a, double k) {
+__host__ __device__ Vector3<double> div(const Vector3<double> &a, double k) {
     return {a.x / k, a.y / k, a.z / k};
 }
 
-__host__ __device__ Vector3d reflect(const Vector3d &v, const Vector3d &n) {
+__host__ __device__ Vector3<double> reflect(const Vector3<double> &v, const Vector3<double> &n) {
     return diff(v, mult(n, 2.0 * dot_product(v, n)));
 }
 
-__host__ __device__ uchar4 color_from_normalized(const Vector3d &v) {
+__host__ __device__ uchar4 color_from_normalized(const Vector3<double> &v) {
     double x = min(v.x, 1.);
     x = max(x, 0.);
     double y = min(v.y, 1.);
@@ -260,7 +249,7 @@ void import_obj_to_scene(std::vector<Triangle> &scene_Triangles,
         FATAL(desc);
     }
     double r = 0;
-    std::vector<Vector3d> vertices;
+    std::vector<Vector3<double>> vertices;
     std::vector<Triangle> figure_Triangles;
     std::string line;
     while (std::getline(is, line)) {
@@ -275,11 +264,11 @@ void import_obj_to_scene(std::vector<Triangle> &scene_Triangles,
             vertices.push_back({x, y, z});
         } else if (buffer[0] == "f") {
             std::vector<std::string> indexes = split_string(buffer[1], '/');
-            Vector3d a = vertices[std::stoi(indexes[0]) - 1];
+            Vector3<double> a = vertices[std::stoi(indexes[0]) - 1];
             indexes = split_string(buffer[2], '/');
-            Vector3d b = vertices[std::stoi(indexes[0]) - 1];
+            Vector3<double> b = vertices[std::stoi(indexes[0]) - 1];
             indexes = split_string(buffer[3], '/');
-            Vector3d c = vertices[std::stoi(indexes[0]) - 1];
+            Vector3<double> c = vertices[std::stoi(indexes[0]) - 1];
 
             r = max(r, norm(a));
             r = max(r, norm(b));
@@ -290,9 +279,9 @@ void import_obj_to_scene(std::vector<Triangle> &scene_Triangles,
     }
     for (auto &it : figure_Triangles) {
         double k = fp.radius / r;
-        Vector3d a = add(mult(it.a, k), fp.center);
-        Vector3d b = add(mult(it.b, k), fp.center);
-        Vector3d c = add(mult(it.c, k), fp.center);
+        Vector3<double> a = add(mult(it.a, k), fp.center);
+        Vector3<double> b = add(mult(it.b, k), fp.center);
+        Vector3<double> c = add(mult(it.c, k), fp.center);
         scene_Triangles.push_back({a, b, c, it.color});
     }
 }
@@ -346,31 +335,31 @@ __host__ __device__ Mat3d inverse(const Mat3d &m) {
     return Mat3d(m11, m12, m13, m21, m22, m23, m31, m32, m33);
 }
 
-__host__ __device__ Vector3d mult(const Mat3d &m, const Vector3d &v) {
-    Vector3d res;
+__host__ __device__ Vector3<double> mult(const Mat3d &m, const Vector3<double> &v) {
+    Vector3<double> res;
     res.x = m.m[0][0] * v.x + m.m[0][1] * v.y + m.m[0][2] * v.z;
     res.y = m.m[1][0] * v.x + m.m[1][1] * v.y + m.m[1][2] * v.z;
     res.z = m.m[2][0] * v.x + m.m[2][1] * v.y + m.m[2][2] * v.z;
     return res;
 }
 
-__host__ __device__ void triangle_intersection(const Vector3d &origin,
-                                               const Vector3d &dir,
+__host__ __device__ void triangle_intersection(const Vector3<double> &origin,
+                                               const Vector3<double> &dir,
                                                const Triangle &Triangle, double *t,
                                                double *u, double *v) {
-    Vector3d e1 = diff(Triangle.b, Triangle.a);
-    Vector3d e2 = diff(Triangle.c, Triangle.a);
+    Vector3<double> e1 = diff(Triangle.b, Triangle.a);
+    Vector3<double> e2 = diff(Triangle.c, Triangle.a);
 
     Mat3d m(-dir.x, e1.x, e2.x, -dir.y, e1.y, e2.y, -dir.z, e1.z, e2.z);
-    Vector3d tmp = mult(inverse(m), diff(origin, Triangle.a));
+    Vector3<double> tmp = mult(inverse(m), diff(origin, Triangle.a));
 
     *t = tmp.x;
     *u = tmp.y;
     *v = tmp.z;
 }
 
-__host__ __device__ bool shadow_ray_hit(const Vector3d &origin,
-                                        const Vector3d &dir,
+__host__ __device__ bool shadow_ray_hit(const Vector3<double> &origin,
+                                        const Vector3<double> &dir,
                                         const Triangle *scene_Triangles, int nTriangles,
                                         double *hit_t) {
     double t_min = 1 / 0.;
@@ -393,20 +382,16 @@ __host__ __device__ bool shadow_ray_hit(const Vector3d &origin,
 const double intensity = 5.;
 const double ka = 0.1, kd = 0.6, ks = 0.5;
 
-__host__ __device__ Vector3d phong_model(const Vector3d &pos,
-                                         const Vector3d &dir, const Triangle &TriangleObj,
-                                         const Triangle *scene_Triangles, int nTriangles,
-                                         const LightParams *lights,
-                                         int lights_num) {
-    Vector3d normal = normalize(cross_product(diff(TriangleObj.b, TriangleObj.a), diff(TriangleObj.c, TriangleObj.a)));
+__host__ __device__ Vector3<double> phong_model(const Vector3<double> &pos, const Vector3<double> &dir, const Triangle &TriangleObj, const Triangle *scene_Triangles, int nTriangles, const LightParams *lights, int lights_num) {
+    Vector3<double> normal = normalize(cross_product(diff(TriangleObj.b, TriangleObj.a), diff(TriangleObj.c, TriangleObj.a)));
 
-    Vector3d ambient{ka, ka, ka};
-    Vector3d diffuse{0., 0., 0.};
-    Vector3d specular{0., 0., 0.};
+    Vector3<double> ambient{ka, ka, ka};
+    Vector3<double> diffuse{0., 0., 0.};
+    Vector3<double> specular{0., 0., 0.};
 
     for (int i = 0; i < lights_num; ++i) {
-        Vector3d light_pos = lights[i].pos;
-        Vector3d L = diff(light_pos, pos);
+        Vector3<double> light_pos = lights[i].pos;
+        Vector3<double> L = diff(light_pos, pos);
         double d = norm(L);
         L = normalize(L);
 
@@ -415,27 +400,27 @@ __host__ __device__ Vector3d phong_model(const Vector3d &pos,
             double k = intensity / (d + 0.001f);
             diffuse = add(diffuse, mult(lights[i].color, max(kd * k * dot_product(L, normal), 0.0)));
 
-            Vector3d R = normalize(reflect(inverse(L), normal));
-            Vector3d S = inverse(dir);
+            Vector3<double> R = normalize(reflect(inverse(L), normal));
+            Vector3<double> S = inverse(dir);
             specular = add(specular, mult(lights[i].color, ks * k * std::pow(max(dot_product(R, S), 0.0), 32)));
         }
     }
     return add(add(mult(ambient, TriangleObj.color), mult(diffuse, TriangleObj.color)), mult(specular, TriangleObj.color));
 }
 
-__host__ __device__ uchar4 ray(const Vector3d &pos, const Vector3d &dir, const Triangle *scene_Triangles, int nTriangles, LightParams *lights, int lights_num) {
+__host__ __device__ uchar4 ray(const Vector3<double> &pos, const Vector3<double> &dir, const Triangle *scene_Triangles, int nTriangles, LightParams *lights, int lights_num) {
     int k, k_min = -1;
     double ts_min;
     for (k = 0; k < nTriangles; k++) {
-        Vector3d e1 = diff(scene_Triangles[k].b, scene_Triangles[k].a);
-        Vector3d e2 = diff(scene_Triangles[k].c, scene_Triangles[k].a);
-        Vector3d p = cross_product(dir, e2);
+        Vector3<double> e1 = diff(scene_Triangles[k].b, scene_Triangles[k].a);
+        Vector3<double> e2 = diff(scene_Triangles[k].c, scene_Triangles[k].a);
+        Vector3<double> p = cross_product(dir, e2);
         double div = dot_product(p, e1);
         if (fabs(div) < 1e-10) continue;
-        Vector3d t = diff(pos, scene_Triangles[k].a);
+        Vector3<double> t = diff(pos, scene_Triangles[k].a);
         double u = dot_product(p, t) / div;
         if (u < 0.0 || u > 1.0) continue;
-        Vector3d q = cross_product(t, e1);
+        Vector3<double> q = cross_product(t, e1);
         double v = dot_product(q, dir) / div;
         if (v < 0.0 || v + u > 1.0) continue;
         double ts = dot_product(q, e2) / div;
@@ -449,24 +434,24 @@ __host__ __device__ uchar4 ray(const Vector3d &pos, const Vector3d &dir, const T
     return color_from_normalized(phong_model(add(mult(dir, ts_min), pos), dir, scene_Triangles[k_min], scene_Triangles, nTriangles, lights, lights_num));
 }
 
-void getRenderOMP(uchar4 *data, int w, int h, Vector3d pc, Vector3d pv, double angle, const Triangle *scene_Triangles, int nTriangles, LightParams *lights, int lights_num) {
+void getRenderOMP(uchar4 *data, int w, int h, Vector3<double> pc, Vector3<double> pv, double angle, const Triangle *scene_Triangles, int nTriangles, LightParams *lights, int lights_num) {
     double dw = 2.0 / (w - 1.0);
     double dh = 2.0 / (h - 1.0);
     double z = 1.0 / tan(angle * M_PI / 360.0);
-    Vector3d bz = normalize(diff(pv, pc));
-    Vector3d bx = normalize(cross_product(bz, {0.0, 0.0, 1.0}));
-    Vector3d by = normalize(cross_product(bx, bz));
+    Vector3<double> bz = normalize(diff(pv, pc));
+    Vector3<double> bx = normalize(cross_product(bz, {0.0, 0.0, 1.0}));
+    Vector3<double> by = normalize(cross_product(bx, bz));
 #pragma omp parallel for
     for (int pix = 0; pix < w * h; ++pix) {
         int i = pix % w;
         int j = pix / w;
-        Vector3d v = {-1.0 + dw * i, (-1.0 + dh * j) * h / w, z};
-        Vector3d dir = mult(bx, by, bz, v);
+        Vector3<double> v = {-1.0 + dw * i, (-1.0 + dh * j) * h / w, z};
+        Vector3<double> dir = mult(bx, by, bz, v);
         data[(h - 1 - j) * w + i] = ray(pc, normalize(dir), scene_Triangles, nTriangles, lights, lights_num);
     }
 }
 
-__global__ void getRenderCUDA(uchar4 *data, int w, int h, Vector3d pc, Vector3d pv, double angle, const Triangle *scene_Triangles, int nTriangles, LightParams *lights, int lights_num) {
+__global__ void getRenderCUDA(uchar4 *data, int w, int h, Vector3<double> pc, Vector3<double> pv, double angle, const Triangle *scene_Triangles, int nTriangles, LightParams *lights, int lights_num) {
     int id_x = threadIdx.x + blockIdx.x * blockDim.x;
     int id_y = threadIdx.y + blockIdx.y * blockDim.y;
 
@@ -476,24 +461,24 @@ __global__ void getRenderCUDA(uchar4 *data, int w, int h, Vector3d pc, Vector3d 
     double dw = 2.0 / (w - 1.0);
     double dh = 2.0 / (h - 1.0);
     double z = 1.0 / tan(angle * M_PI / 360.0);
-    Vector3d bz = normalize(diff(pv, pc));
-    Vector3d bx = normalize(cross_product(bz, {0.0, 0.0, 1.0}));
-    Vector3d by = normalize(cross_product(bx, bz));
+    Vector3<double> bz = normalize(diff(pv, pc));
+    Vector3<double> bx = normalize(cross_product(bz, {0.0, 0.0, 1.0}));
+    Vector3<double> by = normalize(cross_product(bx, bz));
     for (int j = id_y; j < h; j += offset_y)
         for (int i = id_x; i < w; i += offset_x) {
-            Vector3d v = {-1.0 + dw * i, (-1.0 + dh * j) * h / w, z};
-            Vector3d dir = mult(bx, by, bz, v);
+            Vector3<double> v = {-1.0 + dw * i, (-1.0 + dh * j) * h / w, z};
+            Vector3<double> dir = mult(bx, by, bz, v);
             data[(h - 1 - j) * w + i] =
                 ray(pc, normalize(dir), scene_Triangles, nTriangles, lights, lights_num);
         }
 }
 
 __host__ __device__ uchar4 SSAA(uchar4 *data, int i, int j, int w, int h, int kernel_w, int kernel_h) {
-    Vector3d res;
+    Vector3<double> res;
     for (int y = i; y < i + kernel_h; ++y)
         for (int x = j; x < j + kernel_w; ++x) {
             auto pix = data[y * w + x];
-            res = add(res, Vector3d{(double)pix.x, (double)pix.y, (double)pix.z});
+            res = add(res, Vector3<double>{(double)pix.x, (double)pix.y, (double)pix.z});
         }
     auto pix = div(res, kernel_w * kernel_h);
     return make_uchar4(pix.x, pix.y, pix.z, 0);
@@ -534,13 +519,13 @@ void getSSAA_OMP(uchar4 *dst, uchar4 *src, int new_w, int new_h, int w, int h) {
     }
 }
 
-void getCameraPos(const CameraMovement &c, const CameraMovement &n, double t, Vector3d *pc, Vector3d *pv) {
+void getCameraPos(const CameraMovement &c, const CameraMovement &n, double t, Vector3<double> *pc, Vector3<double> *pv) {
     double phic = c.phi0 + c.wphi * t, phin = n.phi0 + n.wphi * t;
     double rc = c.r0 + c.ar * sin(c.wr * t + c.pr), zc = c.z0 + c.ar * sin(c.wz * t + c.pz);
     double rn = n.r0 + n.ar * sin(n.wr * t + n.pr), zn = n.z0 + n.ar * sin(n.wz * t + n.pz);
 
-    *pv = Vector3d{rn * cos(phin), rn * sin(phin), zn};
-    *pc = Vector3d{rc * cos(phic), rc * sin(phic), zc};
+    *pv = Vector3<double>{rn * cos(phin), rn * sin(phin), zn};
+    *pc = Vector3<double>{rc * cos(phic), rc * sin(phic), zc};
 }
 
 void write_image(const std::string &path, const std::vector<uchar4> &data, int w, int h) {
@@ -595,15 +580,15 @@ int main(int argc, char *argv[]) {
     CHECK_MPI(MPI_Bcast(&params.octa, sizeof(FigureParams), MPI_BYTE, 0, MPI_COMM_WORLD));
     CHECK_MPI(MPI_Bcast(&params.icos, sizeof(FigureParams), MPI_BYTE, 0, MPI_COMM_WORLD));
 
-    CHECK_MPI(MPI_Bcast(&params.floor.a, sizeof(Vector3d), MPI_BYTE, 0, MPI_COMM_WORLD));
-    CHECK_MPI(MPI_Bcast(&params.floor.b, sizeof(Vector3d), MPI_BYTE, 0, MPI_COMM_WORLD));
-    CHECK_MPI(MPI_Bcast(&params.floor.c, sizeof(Vector3d), MPI_BYTE, 0, MPI_COMM_WORLD));
-    CHECK_MPI(MPI_Bcast(&params.floor.d, sizeof(Vector3d), MPI_BYTE, 0, MPI_COMM_WORLD));
+    CHECK_MPI(MPI_Bcast(&params.floor.a, sizeof(Vector3<double>), MPI_BYTE, 0, MPI_COMM_WORLD));
+    CHECK_MPI(MPI_Bcast(&params.floor.b, sizeof(Vector3<double>), MPI_BYTE, 0, MPI_COMM_WORLD));
+    CHECK_MPI(MPI_Bcast(&params.floor.c, sizeof(Vector3<double>), MPI_BYTE, 0, MPI_COMM_WORLD));
+    CHECK_MPI(MPI_Bcast(&params.floor.d, sizeof(Vector3<double>), MPI_BYTE, 0, MPI_COMM_WORLD));
     int texture_path_size = params.floor.texture_path.size();
     CHECK_MPI(MPI_Bcast(&texture_path_size, 1, MPI_INT, 0, MPI_COMM_WORLD));
     params.floor.texture_path.resize(texture_path_size);
     CHECK_MPI(MPI_Bcast((char *)params.floor.texture_path.data(), texture_path_size, MPI_CHAR, 0, MPI_COMM_WORLD));
-    CHECK_MPI(MPI_Bcast(&params.floor.color, sizeof(Vector3d), MPI_BYTE, 0, MPI_COMM_WORLD));
+    CHECK_MPI(MPI_Bcast(&params.floor.color, sizeof(Vector3<double>), MPI_BYTE, 0, MPI_COMM_WORLD));
     CHECK_MPI(MPI_Bcast(&params.floor.k_refl, 1, MPI_DOUBLE, 0, MPI_COMM_WORLD));
 
     params.lights.resize(params.lights_num);
@@ -621,7 +606,7 @@ int main(int argc, char *argv[]) {
 
     Triangle *gpu_scene_Triangles;
     LightParams *gpu_lights;
-    if (flags.parallelizationMethod == ParallelizationPolicy::CUDA) {
+    if (parallelizationMode == CUDA) {
         auto Triangles_size = sizeof(Triangle) * scene_Triangles.size();
         CHECK_CUDART(cudaMalloc(&gpu_scene_Triangles, Triangles_size));
         CHECK_CUDART(cudaMemcpy(gpu_scene_Triangles, scene_Triangles.data(), Triangles_size, cudaMemcpyHostToDevice));
@@ -638,21 +623,21 @@ int main(int argc, char *argv[]) {
     CHECK_MPI(MPI_Barrier(MPI_COMM_WORLD));
     std::vector<uchar4> data_render(render_size), data_ssaa(params.w * params.h);
     uchar4 *gpu_data_render, *gpu_data_ssaa;
-    if (flags.parallelizationMethod == ParallelizationPolicy::CUDA) {
+    if (parallelizationMode == CUDA) {
         CHECK_CUDART(cudaMalloc(&gpu_data_render, sizeof(uchar4) * render_size));
         CHECK_CUDART(cudaMalloc(&gpu_data_ssaa, sizeof(uchar4) * params.w * params.h));
     }
     for (int frame = rank; frame < params.nframes; frame += nprocesses) {
-        Vector3d pc, pv;
+        Vector3<double> pc, pv;
         getCameraPos(params.camera_center, params.camera_dir, 0.01 * (double)frame, &pc, &pv);
         auto start = std::chrono::high_resolution_clock::now();
 
-        if (flags.parallelizationMethod == ParallelizationPolicy::OpenMP) {
+        if (parallelizationMode == OpenMP) {
             getRenderOMP(data_render.data(), render_w, render_h, pc, pv, params.angle, scene_Triangles.data(), scene_Triangles.size(), params.lights.data(), params.lights.size());
             getSSAA_OMP(data_ssaa.data(), data_render.data(), params.w, params.h,render_w, render_h);
         }
 
-        if (flags.parallelizationMethod == ParallelizationPolicy::CUDA) {
+        if (parallelizationMode == CUDA) {
             getRenderCUDA<<<NBLOCKSD2, NTHREADSD2>>>(gpu_data_render, render_w, render_h, pc, pv, params.angle,gpu_scene_Triangles, scene_Triangles.size(), gpu_lights, params.lights.size());
             CHECK_CUDART(cudaDeviceSynchronize());
             getSSAA_CUDA<<<NBLOCKSD2, NTHREADSD2>>>(gpu_data_ssaa, gpu_data_render, params.w, params.h, render_w, render_h);
@@ -666,7 +651,7 @@ int main(int argc, char *argv[]) {
         std::cout << frame << "\t" << output_path << "\t" << time.count() << "ms" << std::endl;
     }
 
-    if (flags.parallelizationMethod == ParallelizationPolicy::CUDA) {
+    if (parallelizationMode == CUDA) {
         CHECK_CUDART(cudaFree(gpu_scene_Triangles));
         CHECK_CUDART(cudaFree(gpu_lights));
         CHECK_CUDART(cudaFree(gpu_data_ssaa));
