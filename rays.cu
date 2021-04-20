@@ -45,16 +45,6 @@
         }                                      \
     } while (0)
 
-void handle_signals() {
-    auto nop_handler = [](int sig) {
-        std::cerr << "Unexpected signal received: " << sig << std::endl;
-        MPI_Finalize();
-        exit(0);
-    };
-    std::signal(SIGSEGV, nop_handler);
-    std::signal(SIGABRT, nop_handler);
-}
-
 enum class ParallelizationPolicy { CUDA, OpenMP };
 
 struct Flags {
@@ -601,8 +591,17 @@ void mpi_bcast_scene_Triangles(std::vector<Triangle> &Triangles, MPI_Comm comm) 
     CHECK_MPI(MPI_Bcast(Triangles.data(), sizeof(Triangle) * nTriangles, MPI_BYTE, 0, comm));
 }
 
+void nop_handler(int signal){
+    std::cout << "Error. Bad signal: " << signal << std::endl;
+    MPI_Finalize();
+    exit(0);
+}
+
 int main(int argc, char *argv[]) {
-    handle_signals();
+
+    std::signal(SIGSEGV, nop_handler);
+    std::signal(SIGABRT, nop_handler);
+
     MPIContext ctx(&argc, &argv);
     parse_flags(argc, argv);
 
