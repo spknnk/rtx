@@ -158,8 +158,7 @@ struct LightParams {
 };
 
 struct Params {
-    int nframes, w, h;
-    int lights_num;
+    int nframes, w, h, lights_num;
     double angle;
     CameraMovement camera_center, camera_dir;
     FigureParams hex, octa, icos;
@@ -175,20 +174,6 @@ struct Params {
         return is;
     }
 };
-
-void mpi_bcast_floor_params(FloorParams &p, MPI_Comm comm) {
-    CHECK_MPI(MPI_Bcast(&p.a, sizeof(Vector3d), MPI_BYTE, 0, comm));
-    CHECK_MPI(MPI_Bcast(&p.b, sizeof(Vector3d), MPI_BYTE, 0, comm));
-    CHECK_MPI(MPI_Bcast(&p.c, sizeof(Vector3d), MPI_BYTE, 0, comm));
-    CHECK_MPI(MPI_Bcast(&p.d, sizeof(Vector3d), MPI_BYTE, 0, comm));
-    int texture_path_size = p.texture_path.size();
-    CHECK_MPI(MPI_Bcast(&texture_path_size, 1, MPI_INT, 0, comm));
-    p.texture_path.resize(texture_path_size);
-    CHECK_MPI(MPI_Bcast((char *)p.texture_path.data(), texture_path_size,
-                        MPI_CHAR, 0, comm));
-    CHECK_MPI(MPI_Bcast(&p.color, sizeof(Vector3d), MPI_BYTE, 0, comm));
-    CHECK_MPI(MPI_Bcast(&p.k_refl, 1, MPI_DOUBLE, 0, comm));
-}
 
 void mpi_bcast_params(Params &p, MPI_Comm comm) {
     CHECK_MPI(MPI_Bcast(&p.nframes, 1, MPI_INT, 0, comm));
@@ -207,6 +192,19 @@ void mpi_bcast_params(Params &p, MPI_Comm comm) {
     CHECK_MPI(MPI_Bcast(&p.hex, sizeof(FigureParams), MPI_BYTE, 0, comm));
     CHECK_MPI(MPI_Bcast(&p.octa, sizeof(FigureParams), MPI_BYTE, 0, comm));
     CHECK_MPI(MPI_Bcast(&p.icos, sizeof(FigureParams), MPI_BYTE, 0, comm));
+
+    // bcast floor params
+    CHECK_MPI(MPI_Bcast(&p.floor.a, sizeof(Vector3d), MPI_BYTE, 0, comm));
+    CHECK_MPI(MPI_Bcast(&p.floor.b, sizeof(Vector3d), MPI_BYTE, 0, comm));
+    CHECK_MPI(MPI_Bcast(&p.floor.c, sizeof(Vector3d), MPI_BYTE, 0, comm));
+    CHECK_MPI(MPI_Bcast(&p.floor.d, sizeof(Vector3d), MPI_BYTE, 0, comm));
+    int texture_path_size = p.floor.texture_path.size();
+    CHECK_MPI(MPI_Bcast(&texture_path_size, 1, MPI_INT, 0, comm));
+    p.floor.texture_path.resize(texture_path_size);
+    CHECK_MPI(MPI_Bcast((char *)p.floor.texture_path.data(), texture_path_size,
+                        MPI_CHAR, 0, comm));
+    CHECK_MPI(MPI_Bcast(&p.floor.color, sizeof(Vector3d), MPI_BYTE, 0, comm));
+    CHECK_MPI(MPI_Bcast(&p.floor.k_refl, 1, MPI_DOUBLE, 0, comm));
 
     CHECK_MPI(MPI_Bcast(&p.lights_num, 1, MPI_INT, 0, comm));
     p.lights.resize(p.lights_num);
