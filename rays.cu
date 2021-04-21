@@ -15,10 +15,13 @@
 #include "mpi.h"
 #include "omp.h"
 
-#define NBLOCKSD2 dim3(16, 16)
-#define NTHREADSD2 dim3(16, 16)
+#define NBLOCKS dim3(128, 128)
+#define NTHREADS dim3(16, 16)
 
 #define SSSAx 2
+#define PHONG_INTENS 5
+#define PHONG_KD 0.8
+#define PHONG_KS 0.8
 
 #define FATAL(description)                                      \
     do {                                                        \
@@ -49,7 +52,7 @@
 
 #define OpenMP 0
 #define CUDA 1
-int parallelizationMode = CUDA;
+int parallelizationMode;
 
 void parse_flags(int argc, char *argv[]) {
    
@@ -243,13 +246,18 @@ std::vector<std::string> split_string(const std::string &s, char d) {
     return result;
 }
 
-void import_obj_to_scene(std::vector<Triangle> &scene_Triangles,
-                         const std::string &filepath, const FigureParams &fp) {
+void importObj(std::vector<Triangle> &scene_Triangles, const std::string &filepath, const FigureParams &fp) {
     std::ifstream is(filepath);
     if (!is) {
         std::string desc = "can't open " + filepath;
         FATAL(desc);
     }
+
+    /*
+    std::vector<Triangle> triangle_list(10);
+    triangle_list[0] = Triangle{Vector3<double> {}, Vector3<double> {}, Vector3<double> {}, fp.color}
+    */
+
     double r = 0;
     std::vector<Vector3<double>> vertices;
     std::vector<Triangle> figure_Triangles;
@@ -279,14 +287,14 @@ void import_obj_to_scene(std::vector<Triangle> &scene_Triangles,
             figure_Triangles.push_back(Triangle{a, b, c, fp.color});
         }
     }
-    for (auto &it : figure_Triangles) {
-        double k = fp.radius / r;
-        Vector3<double> a = add(mult(it.a, k), fp.center);
-        Vector3<double> b = add(mult(it.b, k), fp.center);
-        Vector3<double> c = add(mult(it.c, k), fp.center);
-        scene_Triangles.push_back({a, b, c, it.color});
+
+    double radius = fp.radius / r;
+    for (auto &single_triangle : figure_Triangles) {
+        scene_Triangles.push_back({add(mult(single_triangle.a, radius), fp.center), add(mult(single_triangle.b, radius), fp.center), add(mult(single_triangle.c, radius), fp.center), single_triangle.color});
     }
 }
+
+
 
 void add_floor_to_scene(std::vector<Triangle> &scene_Triangles, const FloorParams &fp) {
     scene_Triangles.push_back({fp.c, fp.b, fp.a, fp.color});
@@ -345,10 +353,7 @@ __host__ __device__ Vector3<double> mult(const Mat3d &m, const Vector3<double> &
     return res;
 }
 
-__host__ __device__ void triangle_intersection(const Vector3<double> &origin,
-                                               const Vector3<double> &dir,
-                                               const Triangle &Triangle, double *t,
-                                               double *u, double *v) {
+__host__ __device__ void triangle_intersection(const Vector3<double> &origin, const Vector3<double> &dir, const Triangle &Triangle, double *t, double *u, double *v) {
     Vector3<double> e1 = diff(Triangle.b, Triangle.a);
     Vector3<double> e2 = diff(Triangle.c, Triangle.a);
 
@@ -360,10 +365,7 @@ __host__ __device__ void triangle_intersection(const Vector3<double> &origin,
     *v = tmp.z;
 }
 
-__host__ __device__ bool shadow_ray_hit(const Vector3<double> &origin,
-                                        const Vector3<double> &dir,
-                                        const Triangle *scene_Triangles, int nTriangles,
-                                        double *hit_t) {
+__host__ __device__ bool shadow_ray_hit(const Vector3<double> &origin, const Vector3<double> &dir, const Triangle *scene_Triangles, int nTriangles, double *hit_t) {
     double t_min = 1 / 0.;
     bool hit = false;
     for (int i = 0; i < nTriangles; ++i) {
@@ -381,13 +383,10 @@ __host__ __device__ bool shadow_ray_hit(const Vector3<double> &origin,
     return hit;
 }
 
-const double intensity = 5.;
-const double ka = 0.1, kd = 0.6, ks = 0.5;
-
 __host__ __device__ Vector3<double> phong_model(const Vector3<double> &pos, const Vector3<double> &dir, const Triangle &TriangleObj, const Triangle *scene_Triangles, int nTriangles, const LightParams *lights, int lights_num) {
     Vector3<double> normal = normalize(cross_product(diff(TriangleObj.b, TriangleObj.a), diff(TriangleObj.c, TriangleObj.a)));
 
-    Vector3<double> ambient{ka, ka, ka};
+    Vector3<double> ambient{0.1, 0.1, 0.1};
     Vector3<double> diffuse{0., 0., 0.};
     Vector3<double> specular{0., 0., 0.};
 
@@ -399,12 +398,12 @@ __host__ __device__ Vector3<double> phong_model(const Vector3<double> &pos, cons
 
         double hit_t = 0.0;
         if (shadow_ray_hit(light_pos, inverse(L), scene_Triangles, nTriangles, &hit_t) && (hit_t > d || (hit_t > d || (d - hit_t < 0.0005)))) {
-            double k = intensity / (d + 0.001f);
-            diffuse = add(diffuse, mult(lights[i].color, max(kd * k * dot_product(L, normal), 0.0)));
+            double k = PHONG_INTENS / (d + 0.001f);
+            diffuse = add(diffuse, mult(lights[i].color, max(PHONG_KD * k * dot_product(L, normal), 0.0)));
 
             Vector3<double> R = normalize(reflect(inverse(L), normal));
             Vector3<double> S = inverse(dir);
-            specular = add(specular, mult(lights[i].color, ks * k * std::pow(max(dot_product(R, S), 0.0), 32)));
+            specular = add(specular, mult(lights[i].color, PHONG_KS * k * std::pow(max(dot_product(R, S), 0.0), 32)));
         }
     }
     return add(add(mult(ambient, TriangleObj.color), mult(diffuse, TriangleObj.color)), mult(specular, TriangleObj.color));
@@ -507,17 +506,17 @@ __global__ void getSSAA_CUDA(uchar4 *dst, uchar4 *src, int new_w, int new_h, int
 }
 
 void getSSAA_OMP(uchar4 *dst, uchar4 *src, int new_w, int new_h, int w, int h) {
-    int kernel_w = w / new_w, kernel_h = h / new_h;
+    int kernel_w = w / new_w;
+    int kernel_h = h / new_h;
 #pragma omp parallel for
-    for (int pix = 0; pix < new_h * new_h; ++pix) {
+    for (int pix = 0; pix < new_w * new_h; ++pix) {
         int i = pix / new_w;
         int j = pix % new_w;
 
         int pix_i = i * kernel_h;
         int pix_j = j * kernel_w;
 
-        dst[i * new_w + j] =
-            SSAA(src, pix_i, pix_j, w, h, kernel_w, kernel_h);
+        dst[i * new_w + j] = SSAA(src, pix_i, pix_j, w, h, kernel_w, kernel_h);
     }
 }
 
@@ -562,10 +561,11 @@ int main(int argc, char *argv[]) {
     Params params;
     if (rank == 0) {
         std::cin >> params;
-        import_obj_to_scene(scene_Triangles, "hex.obj", params.hex);
-        import_obj_to_scene(scene_Triangles, "octa.obj", params.octa);
-        import_obj_to_scene(scene_Triangles, "icos.obj", params.icos);
-        add_floor_to_scene(scene_Triangles, params.floor);
+        importObj(scene_Triangles, "hex.obj", params.hex);
+        importObj(scene_Triangles, "octa.obj", params.octa);
+        importObj(scene_Triangles, "icos.obj", params.icos);
+        scene_Triangles.push_back({params.floor.c, params.floor.b, params.floor.a, params.floor.color});
+        scene_Triangles.push_back({params.floor.a, params.floor.d, params.floor.c, params.floor.color});
     }
 
     int output_pattern_size = params.output_pattern.size();
@@ -635,9 +635,9 @@ int main(int argc, char *argv[]) {
         }
 
         if (parallelizationMode == CUDA) {
-            getRenderCUDA<<<NBLOCKSD2, NTHREADSD2>>>(gpu_data_render, SSSAx*params.w, SSSAx*params.h, pc, pv, params.angle,gpu_scene_Triangles, scene_Triangles.size(), gpu_lights, params.lights.size());
+            getRenderCUDA<<<NBLOCKS, NTHREADS>>>(gpu_data_render, SSSAx*params.w, SSSAx*params.h, pc, pv, params.angle,gpu_scene_Triangles, scene_Triangles.size(), gpu_lights, params.lights.size());
             CSC(cudaDeviceSynchronize());
-            getSSAA_CUDA<<<NBLOCKSD2, NTHREADSD2>>>(gpu_data_ssaa, gpu_data_render, params.w, params.h, SSSAx*params.w, SSSAx*params.h);
+            getSSAA_CUDA<<<NBLOCKS, NTHREADS>>>(gpu_data_ssaa, gpu_data_render, params.w, params.h, SSSAx*params.w, SSSAx*params.h);
             CSC(cudaMemcpy(data_ssaa.data(), gpu_data_ssaa,sizeof(uchar4) * params.w * params.h, cudaMemcpyDeviceToHost));
         }
 

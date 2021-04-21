@@ -1,0 +1,13 @@
+std::vector<Triangle> triangle_list(12);
+triangle_list[0] = Triangle{Vector3<double> {-0.5000, -0.5000, 0.5000}, Vector3<double> {-0.5000, -0.5000, -0.5000}, Vector3<double> {0.5000, -0.5000, -0.5000}, fp.color}
+triangle_list[1] = Triangle{Vector3<double> {0.5000, -0.5000, -0.5000}, Vector3<double> {0.5000, -0.5000, 0.5000}, Vector3<double> {-0.5000, -0.5000, 0.5000}, fp.color}
+triangle_list[2] = Triangle{Vector3<double> {-0.5000, 0.5000, 0.5000}, Vector3<double> {0.5000, 0.5000, 0.5000}, Vector3<double> {0.5000, 0.5000, -0.5000}, fp.color}
+triangle_list[3] = Triangle{Vector3<double> {0.5000, 0.5000, -0.5000}, Vector3<double> {-0.5000, 0.5000, -0.5000}, Vector3<double> {-0.5000, 0.5000, 0.5000}, fp.color}
+triangle_list[4] = Triangle{Vector3<double> {-0.5000, -0.5000, 0.5000}, Vector3<double> {0.5000, -0.5000, 0.5000}, Vector3<double> {0.5000, 0.5000, 0.5000}, fp.color}
+triangle_list[5] = Triangle{Vector3<double> {0.5000, 0.5000, 0.5000}, Vector3<double> {-0.5000, 0.5000, 0.5000}, Vector3<double> {-0.5000, -0.5000, 0.5000}, fp.color}
+triangle_list[6] = Triangle{Vector3<double> {0.5000, -0.5000, 0.5000}, Vector3<double> {0.5000, -0.5000, -0.5000}, Vector3<double> {0.5000, 0.5000, -0.5000}, fp.color}
+triangle_list[7] = Triangle{Vector3<double> {0.5000, 0.5000, -0.5000}, Vector3<double> {0.5000, 0.5000, 0.5000}, Vector3<double> {0.5000, -0.5000, 0.5000}, fp.color}
+triangle_list[8] = Triangle{Vector3<double> {0.5000, -0.5000, -0.5000}, Vector3<double> {-0.5000, -0.5000, -0.5000}, Vector3<double> {-0.5000, 0.5000, -0.5000}, fp.color}
+triangle_list[9] = Triangle{Vector3<double> {-0.5000, 0.5000, -0.5000}, Vector3<double> {0.5000, 0.5000, -0.5000}, Vector3<double> {0.5000, -0.5000, -0.5000}, fp.color}
+triangle_list[10] = Triangle{Vector3<double> {-0.5000, -0.5000, -0.5000}, Vector3<double> {-0.5000, -0.5000, 0.5000}, Vector3<double> {-0.5000, 0.5000, 0.5000}, fp.color}
+triangle_list[11] = Triangle{Vector3<double> {-0.5000, 0.5000, 0.5000}, Vector3<double> {-0.5000, 0.5000, -0.5000}, Vector3<double> {-0.5000, -0.5000, -0.5000}, fp.color}
